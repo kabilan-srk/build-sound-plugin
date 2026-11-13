@@ -45,8 +45,8 @@ public class BuildSoundAction implements RootAction {
 
     /** The newest event id of the caller. The page calls this once on load, so it never replays old events. */
     @GET
-    public void doLatest(StaplerRequest2 request, StaplerResponse2 response) throws IOException {
-        String userId = callerId();
+    public void doLatest(StaplerResponse2 response) throws IOException {
+        String userId = currentUserId();
         if (userId == null) {
             sendError(response, 403);
             return;
@@ -58,13 +58,13 @@ public class BuildSoundAction implements RootAction {
                 latest = event.getId();
             }
         }
-        send(response, startBody(userId, latest));
+        send(response, commonReply(userId, latest));
     }
 
     /** The caller's events with an id greater than {@code after}. */
     @GET
     public void doEvents(StaplerRequest2 request, StaplerResponse2 response) throws IOException {
-        String userId = callerId();
+        String userId = currentUserId();
         if (userId == null) {
             sendError(response, 403);
             return;
@@ -102,7 +102,7 @@ public class BuildSoundAction implements RootAction {
             events.add(json);
             latest = event.getId();
         }
-        JSONObject body = startBody(userId, latest);
+        JSONObject body = commonReply(userId, latest);
         body.put("events", events);
         send(response, body);
     }
@@ -123,10 +123,10 @@ public class BuildSoundAction implements RootAction {
     }
 
     /**
-     * The part both answers share: which Jenkins run this is, who the answer is for (always the caller's own id,
+     * The fields both answers share: which Jenkins run this is, who the answer is for (always the caller's own id,
      * never anything from the request) and the cursor the page should use next.
      */
-    private JSONObject startBody(String userId, long latest) {
+    private JSONObject commonReply(String userId, long latest) {
         JSONObject body = new JSONObject();
         body.put("instance", instanceId);
         body.put("user", userId);
@@ -135,10 +135,11 @@ public class BuildSoundAction implements RootAction {
     }
 
     /**
-     * The id of the logged-in caller in the same form the listener stores ({@code UserIdCause.getUserId()} is
-     * {@code User.getId()}), or null for an anonymous caller.
+     * The id of the logged-in user in the same form the listener stores ({@code UserIdCause.getUserId()} is
+     * {@code User.getId()}), or null for an anonymous caller. The page decorator uses it too, so the id the page
+     * is rendered for and the id the endpoint answers with are worked out in one place.
      */
-    private static String callerId() {
+    static String currentUserId() {
         User user = User.current();
         return user == null ? null : user.getId();
     }

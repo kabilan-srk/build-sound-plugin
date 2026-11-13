@@ -3,7 +3,6 @@ package io.jenkins.plugins.buildsound;
 import hudson.Extension;
 import hudson.PluginWrapper;
 import hudson.model.PageDecorator;
-import hudson.model.User;
 import jenkins.model.Jenkins;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -18,12 +17,14 @@ public class BuildSoundDecorator extends PageDecorator {
     /** The id of the logged-in user, or null when nobody is logged in. */
     @Restricted(NoExternalUse.class)
     public String getUserId() {
-        User user = User.current();
-        return user == null ? null : user.getId();
+        return BuildSoundAction.currentUserId();
     }
 
     /**
-     * True only for a logged-in user. Anonymous visitors cannot call the endpoint. The login page needs no check
+     * Jelly reads this as {@code ${it.active}} (see footer.jelly): Jelly turns the property name into a call of
+     * {@code isActive()}.
+     *
+     * <p>True only for a logged-in user. Anonymous visitors cannot call the endpoint. The login page needs no check
      * of its own: Jenkins does not render page decorators there (a test checks this, also for a logged-in user).
      */
     @Restricted(NoExternalUse.class)

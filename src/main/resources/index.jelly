@@ -1,4 +1,4 @@
 <?jelly escape-by-default='true'?>
 <div>
-    TODO
+    Plays a sound, and optionally shows a desktop notification, in the browser of the person who started a build when it finishes.
 </div>

@@ -1,5 +1,6 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core">
+  <!-- ${it.active} calls isActive() of BuildSoundDecorator; ${it.version} calls getVersion(), and so on. -->
   <j:if test="${it.active}">
     <!--
       An external file, not inline script, so it also works under a strict Content-Security-Policy.
