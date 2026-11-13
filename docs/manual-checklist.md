@@ -128,6 +128,12 @@ Log in as `alice`, turn `Build sound` on, keep the Network tab open.
 9. The packaged plugin does not contain the generator. After `mvn package`, run
    `unzip -l target/build-sound.hpi | grep -E "make_sounds|sounds/"`.
    Expected: only `sounds/success.wav` and `sounds/problem.wav` are listed.
+10. Blocked sound still notifies. Turn both `Build sound` and `Desktop notifications` on, then reload, so the page has
+    had **no click and no key press**. Keep this as the only `alice` tab. Start `quick-ok` three times in a row.
+    Expected: a notification for each of the three builds, even if the browser blocked the sound (record whether it
+    did). Then open a second `alice` tab, click once anywhere in it, and start `quick-ok` again.
+    Expected: the chime comes from the second tab and there is exactly one notification (not two). The first tab
+    stays quiet from then on.
 
 ## 4. Desktop notifications
 

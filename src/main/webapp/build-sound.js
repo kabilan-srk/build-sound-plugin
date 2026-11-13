@@ -219,23 +219,39 @@
         return null;
     }
 
-    // Can this tab take part in the claim at all? A tab where the browser blocked sound stays out until
-    // the user clicks or presses a key in it, so a tab the user did use can take over.
+    // Can this tab take part in the claim at all? A tab where the browser blocked sound is only useful while
+    // notifications are on too. With sound as the only choice it has nothing to do, so it stays out until the
+    // user clicks or presses a key in it.
     function mayClaim() {
         if (!running || !wantsAnything()) {
             return false;
         }
-        return !(soundEnabled() && soundBlockedHere);
+        return !(soundEnabled() && soundBlockedHere && !notificationsEnabled());
     }
 
-    // Takes the claim if it is free, or renews it if it is ours.
+    // Writes this tab's claim. "blocked" tells the other tabs that this tab cannot play sound (it only
+    // notifies), so a tab that can play may take the claim over. The mark is left out when it is not true.
+    function writeClaim() {
+        var claim = { tab: tabId, time: Date.now(), ttl: claimMs };
+        if (soundEnabled() && soundBlockedHere) {
+            claim.blocked = true;
+        }
+        storageSet(CLAIM_KEY, JSON.stringify(claim));
+    }
+
+    // Takes the claim if it is free, renews it if it is ours, or takes it from a tab whose sound is blocked
+    // when this tab can play. Renewing also removes our own "blocked" mark once a click let us play again.
     function renewClaim() {
         if (!mayClaim()) {
+            releaseClaim(); // for example a blocked tab whose notifications were just switched off
             return;
         }
         var claim = readClaim();
-        if (claimIsFree(claim) || claim.tab === tabId) {
-            storageSet(CLAIM_KEY, JSON.stringify({ tab: tabId, time: Date.now(), ttl: claimMs }));
+        var canPlay = soundEnabled() && !soundBlockedHere;
+        // A healthy holder is never taken from, and a blocked tab never takes from another blocked tab.
+        var holderIsBlocked = claim !== null && claim.blocked === true;
+        if (claimIsFree(claim) || claim.tab === tabId || (canPlay && holderIsBlocked)) {
+            writeClaim();
         }
     }
 
@@ -322,12 +338,17 @@
     document.addEventListener("pointerdown", onUserGesture, true);
     document.addEventListener("keydown", onUserGesture, true);
 
-    // The browser refused to play. Give the claim up so a tab the user did click in can take it, and do not
-    // take it back until the user clicks or presses a key here.
+    // The browser refused to play. With notifications on, keep the claim (so they keep coming) but mark it
+    // "blocked", so a tab that can play may take it. Otherwise this tab has nothing to do: give the claim up.
+    // Either way we do not try to play again until the user clicks or presses a key here.
     function onSoundBlocked() {
         soundBlockedHere = true;
         primed = false;
-        releaseClaim();
+        if (!notificationsEnabled()) {
+            releaseClaim();
+        } else if (holdsClaim()) {
+            writeClaim();
+        }
     }
 
     // Plays the sounds one after the other, so they never overlap: the next one starts when the one before ends.
