@@ -1,0 +1,27 @@
+# Personal workflow files (skills, agents). Not part of the public plugin repo.
+.claude/
+
+# Private working notes and lessons (design, plan, learning pages). Not part of the public plugin repo.
+docs/superpowers/
+docs/learn/
+
+# Maven
+target/
+
+# Local Jenkins started by `mvn hpi:run` (contains its home directory and secrets)
+work/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
