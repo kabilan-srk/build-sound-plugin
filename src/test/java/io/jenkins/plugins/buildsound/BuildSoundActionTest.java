@@ -94,6 +94,8 @@ class BuildSoundActionTest {
         JSONObject body = json(response);
         assertEquals(aliceLast.getId(), body.getLong("latest"));
         assertFalse(body.getString("instance").isEmpty());
+        // The reply names the user it was made for, so the page can check it is the one it was rendered for.
+        assertEquals("alice", body.getString("user"));
     }
 
     @Test
@@ -118,6 +120,23 @@ class BuildSoundActionTest {
         assertEquals(7, event.getInt("number"));
         assertEquals("problem", event.getString("sound"));
         assertEquals(second.getId(), body.getLong("latest"));
+        assertEquals("alice", body.getString("user"));
+    }
+
+    @Test
+    void eachUserGetsTheirOwnNameInBothReplies(JenkinsRule j) throws Exception {
+        configure(j);
+        JenkinsRule.WebClient bob = client(j, "bob");
+        assertEquals("bob", json(get(bob, "build-sound/latest")).getString("user"));
+        assertEquals("bob", json(get(bob, "build-sound/events?after=0")).getString("user"));
+    }
+
+    @Test
+    void userInReplyIsNeverTakenFromTheRequest(JenkinsRule j) throws Exception {
+        configure(j);
+        JenkinsRule.WebClient alice = client(j, "alice");
+        assertEquals(
+                "alice", json(get(alice, "build-sound/events?after=0&user=bob")).getString("user"));
     }
 
     @Test

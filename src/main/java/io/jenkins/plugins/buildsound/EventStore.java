@@ -59,15 +59,6 @@ public class EventStore {
         }
     }
 
-    /** The highest id among this user's own events, or 0 if there are none. */
-    public long latestIdFor(String userId) {
-        synchronized (lock) {
-            pruneExpired(clock.millis());
-            LinkedList<BuildEvent> events = eventsByUser.get(userId);
-            return events == null || events.isEmpty() ? 0 : events.getLast().getId();
-        }
-    }
-
     /** This user's events with an id greater than {@code afterId}, oldest first. */
     public List<BuildEvent> eventsSince(String userId, long afterId) {
         synchronized (lock) {

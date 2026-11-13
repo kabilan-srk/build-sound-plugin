@@ -51,8 +51,14 @@ public class BuildSoundAction implements RootAction {
             sendError(response, 403);
             return;
         }
-        JSONObject body = startBody(userId);
-        send(response, body);
+        // The newest of the caller's events that the caller may read; 0 if there is none.
+        long latest = 0;
+        for (BuildEvent event : EventStore.instance().eventsSince(userId, 0)) {
+            if (callerCanRead(event.getJobFullName())) {
+                latest = event.getId();
+            }
+        }
+        send(response, startBody(userId, latest));
     }
 
     /** The caller's events with an id greater than {@code after}. */
@@ -74,7 +80,13 @@ public class BuildSoundAction implements RootAction {
         }
 
         JSONArray events = new JSONArray();
+        // One read gives us both the events and, from them, the new cursor. Nothing else is read from the store,
+        // so a build that finishes during this request cannot be skipped: it shows up in the next poll.
         List<BuildEvent> found = EventStore.instance().eventsSince(userId, after);
+        // The cursor only moves past events the caller may read. A hidden build must not move it, or the caller
+        // could tell that some build finished. (Event ids are shared by all users, so a gap in the ids only
+        // shows that other events exist, never what they are.)
+        long latest = after;
         for (BuildEvent event : found) {
             if (!callerCanRead(event.getJobFullName())) {
                 continue; // job deleted, or the caller may not see it: leave the event out
@@ -85,8 +97,9 @@ public class BuildSoundAction implements RootAction {
             json.put("number", event.getBuildNumber());
             json.put("sound", event.getSound().name().toLowerCase(Locale.ROOT));
             events.add(json);
+            latest = event.getId();
         }
-        JSONObject body = startBody(userId);
+        JSONObject body = startBody(userId, latest);
         body.put("events", events);
         send(response, body);
     }
@@ -105,11 +118,15 @@ public class BuildSoundAction implements RootAction {
         }
     }
 
-    /** The part both answers share: which Jenkins run this is, and the caller's newest event id. */
-    private JSONObject startBody(String userId) {
+    /**
+     * The part both answers share: which Jenkins run this is, who the answer is for (always the caller's own id,
+     * never anything from the request) and the cursor the page should use next.
+     */
+    private JSONObject startBody(String userId, long latest) {
         JSONObject body = new JSONObject();
         body.put("instance", instanceId);
-        body.put("latest", EventStore.instance().latestIdFor(userId));
+        body.put("user", userId);
+        body.put("latest", latest);
         return body;
     }
 

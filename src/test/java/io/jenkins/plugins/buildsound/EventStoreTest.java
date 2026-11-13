@@ -81,15 +81,6 @@ class EventStoreTest {
     }
 
     @Test
-    void latestIdForIsPerUserAndZeroWhenNone() {
-        assertEquals(0, store.latestIdFor("alice"));
-        addFor("alice");
-        long bobId = addFor("bob").getId();
-        assertEquals(bobId, store.latestIdFor("bob"));
-        assertTrue(store.latestIdFor("alice") < bobId);
-    }
-
-    @Test
     void keepsOnlyLastTwentyPerUser() {
         for (int i = 0; i < 25; i++) {
             store.add("alice", "job", i, Sound.SUCCESS);
@@ -121,7 +112,7 @@ class EventStoreTest {
         clock.advance(Duration.ofMinutes(6));
         // Bob's add must clean up Alice's old event, even though Alice never reads.
         addFor("bob");
-        assertEquals(0, store.latestIdFor("alice"));
+        assertTrue(store.eventsSince("alice", 0).isEmpty());
     }
 
     @Test
@@ -143,8 +134,8 @@ class EventStoreTest {
         for (String user : new String[] {null, "", "  ", "SYSTEM", "anonymous"}) {
             assertFalse(store.add(user, "job", 1, Sound.SUCCESS).isPresent(), "user: " + user);
         }
-        assertEquals(0, store.latestIdFor("SYSTEM"));
-        assertEquals(0, store.latestIdFor("anonymous"));
+        assertTrue(store.eventsSince("SYSTEM", 0).isEmpty());
+        assertTrue(store.eventsSince("anonymous", 0).isEmpty());
     }
 
     @Test

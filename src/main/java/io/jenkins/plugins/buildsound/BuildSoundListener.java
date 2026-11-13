@@ -6,9 +6,11 @@ import hudson.model.Cause;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import hudson.security.ACL;
+import hudson.security.ACLContext;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,7 +33,8 @@ public class BuildSoundListener extends RunListener<Run<?, ?>> {
 
     @Override
     public void onCompleted(Run<?, ?> run, TaskListener listener) {
-        // A problem in this plugin must never make somebody's build fail, so catch everything and just log it.
+        // Jenkins itself also catches errors thrown by listeners. This catch is a second safety net, so a problem
+        // in this plugin is logged here, with our name on it, and can never fail somebody's build.
         try {
             recordEvents(run);
         } catch (RuntimeException e) {
@@ -45,69 +48,83 @@ public class BuildSoundListener extends RunListener<Run<?, ?>> {
             return; // aborted or not built: stay silent
         }
 
-        // user id -> true if the user reached this build by at least one path where nobody waits for it.
-        // A map gives us "at most one event per user per build" for free.
-        Map<String, Boolean> users = new LinkedHashMap<>();
-        for (Cause cause : run.getCauses()) {
-            collectUsers(run, cause, false, 0, users);
+        // A set holds each user once, so a user gets at most one event per build.
+        Set<String> notWaitedUsers = new LinkedHashSet<>(); // reached by a path where nobody waits for this build
+        Set<String> waitedUsers = new LinkedHashSet<>(); // reached only by paths where the upstream waits
+        // Looking up an upstream run is checked against the current user's permissions. A build can run as a
+        // restricted user, who may not read the upstream job, and then the lookup would wrongly find nothing.
+        // This is safe here: the listener only decides who is told. The endpoint still checks the caller's own
+        // permission before it shows a job name.
+        try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+            for (Cause cause : run.getCauses()) {
+                boolean waited = false;
+                if (cause instanceof Cause.UpstreamCause) {
+                    // Only the direct upstream decides "waited for". Causes further up are only used to find users.
+                    Run<?, ?> upstreamRun = ((Cause.UpstreamCause) cause).getUpstreamRun();
+                    waited = isWaitedFor(run, upstreamRun);
+                }
+                collectUsers(cause, waited, 0, notWaitedUsers, waitedUsers);
+            }
         }
 
         String jobName = run.getParent().getFullName();
-        for (Map.Entry<String, Boolean> entry : users.entrySet()) {
-            boolean reachedWithoutWaiting = entry.getValue();
-            // A waited-for build that succeeded stays silent: the upstream build plays its own sound later.
-            // A waited-for build that did not succeed still plays, so a hidden failure is heard.
-            if (reachedWithoutWaiting || sound.get() == Sound.PROBLEM) {
-                EventStore.instance().add(entry.getKey(), jobName, run.getNumber(), sound.get());
-            }
+        for (String userId : usersToTell(notWaitedUsers, waitedUsers, sound.get())) {
+            EventStore.instance().add(userId, jobName, run.getNumber(), sound.get());
         }
     }
 
     /**
-     * Adds the users found in {@code cause} to {@code users}.
-     *
-     * @param run the build whose cause this is (used to check whether somebody waits for it)
-     * @param waited true if a build further down this path is already waited for by its upstream
+     * The users who get an event for this build. A waited-for build that succeeded stays silent: the upstream build
+     * plays its own sound later. A waited-for build that did not succeed still plays, so a hidden failure is heard.
+     * A user who is in both sets is told, because the path where nobody waits wins.
      */
-    private void collectUsers(Run<?, ?> run, Cause cause, boolean waited, int depth, Map<String, Boolean> users) {
+    static Set<String> usersToTell(Set<String> notWaitedUsers, Set<String> waitedUsers, Sound sound) {
+        Set<String> result = new LinkedHashSet<>(notWaitedUsers);
+        if (sound == Sound.PROBLEM) {
+            result.addAll(waitedUsers);
+        }
+        return result;
+    }
+
+    /**
+     * Finds the users behind {@code cause} and puts them into one of the two sets.
+     *
+     * @param waited true if the build that finished is waited for by its direct upstream. It stays the same for
+     *     every cause further up the chain.
+     */
+    void collectUsers(Cause cause, boolean waited, int depth, Set<String> notWaitedUsers, Set<String> waitedUsers) {
         if (cause instanceof Cause.UserIdCause) {
             String userId = ((Cause.UserIdCause) cause).getUserId();
             if (userId != null) {
-                boolean alreadyWithoutWaiting = Boolean.TRUE.equals(users.get(userId));
-                // A path with no waiting wins over a waiting path.
-                users.put(userId, alreadyWithoutWaiting || !waited);
+                if (waited) {
+                    waitedUsers.add(userId);
+                } else {
+                    notWaitedUsers.add(userId);
+                }
             }
             return;
         }
 
         if (cause instanceof Cause.UpstreamCause && depth < MAX_DEPTH) {
-            Cause.UpstreamCause upstream = (Cause.UpstreamCause) cause;
-            boolean waitedNow = waited || isWaitedFor(run, upstream);
-            // The upstream run can be null if it was deleted; then the next hop cannot be checked and counts as "not
-            // waited".
-            Run<?, ?> upstreamRun = upstream.getUpstreamRun();
-            for (Cause nested : upstream.getUpstreamCauses()) {
-                collectUsers(upstreamRun, nested, waitedNow, depth + 1, users);
+            for (Cause nested : ((Cause.UpstreamCause) cause).getUpstreamCauses()) {
+                collectUsers(nested, waited, depth + 1, notWaitedUsers, waitedUsers);
             }
         }
     }
 
-    /** True if the upstream build is still running and waiting for this build to finish. */
-    private boolean isWaitedFor(Run<?, ?> run, Cause.UpstreamCause upstream) {
-        if (run == null) {
+    /**
+     * True if the upstream build is still running and waiting for {@code run} to finish. The upstream run can be
+     * null (for example the job was deleted); then nobody can be waiting.
+     */
+    private boolean isWaitedFor(Run<?, ?> run, Run<?, ?> upstreamRun) {
+        if (upstreamRun == null || !upstreamRun.isBuilding()) {
             return false;
         }
-        boolean hasMarker = false;
         for (Action action : run.getAllActions()) {
             if (WAIT_MARKER_CLASS.equals(action.getClass().getName())) {
-                hasMarker = true;
-                break;
+                return true;
             }
         }
-        if (!hasMarker) {
-            return false;
-        }
-        Run<?, ?> upstreamRun = upstream.getUpstreamRun();
-        return upstreamRun != null && upstreamRun.isBuilding();
+        return false;
     }
 }

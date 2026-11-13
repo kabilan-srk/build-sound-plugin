@@ -2,6 +2,7 @@ package io.jenkins.plugins.buildsound;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.FreeStyleProject;
 import hudson.model.Item;
@@ -80,8 +81,57 @@ class BuildSoundActionPermissionTest {
         }
         JSONObject body = eventsFor(j, "bob");
         assertEquals(0, body.getJSONArray("events").size());
-        // The cursor still moves, so the browser does not ask again for the hidden event.
-        assertEquals(hidden.getId(), body.getLong("latest"));
+        // A hidden build must not move the cursor, or the caller could tell that some build finished.
+        assertEquals(0, body.getLong("latest"));
+        assertTrue(hidden.getId() > 0);
+    }
+
+    @Test
+    void hiddenEventDoesNotMoveTheCursorAfterAReadableOne(JenkinsRule j) throws Exception {
+        FreeStyleProject open = j.createFreeStyleProject("open");
+        j.createFreeStyleProject("secret");
+        useSecurity(j, baseRules().grant(Item.READ).onItems(open).to("bob"));
+        BuildEvent readable =
+                EventStore.instance().add("bob", "open", 1, Sound.SUCCESS).get();
+        EventStore.instance().add("bob", "secret", 2, Sound.SUCCESS);
+
+        JSONObject body = eventsFor(j, "bob");
+        assertEquals(1, body.getJSONArray("events").size());
+        assertEquals(readable.getId(), body.getLong("latest"));
+    }
+
+    @Test
+    void cursorStaysWhereItWasWhenOnlyHiddenEventsAreNewer(JenkinsRule j) throws Exception {
+        j.createFreeStyleProject("secret");
+        useSecurity(j, baseRules());
+        EventStore.instance().add("bob", "secret", 1, Sound.SUCCESS);
+        BuildEvent second =
+                EventStore.instance().add("bob", "secret", 2, Sound.SUCCESS).get();
+        long cursor = second.getId() - 1;
+
+        JenkinsRule.WebClient wc = j.createWebClient();
+        wc.login("bob");
+        WebResponse response =
+                wc.goTo("build-sound/events?after=" + cursor, null).getWebResponse();
+        JSONObject body = JSONObject.fromObject(response.getContentAsString());
+        assertEquals(0, body.getJSONArray("events").size());
+        assertEquals(cursor, body.getLong("latest"));
+    }
+
+    @Test
+    void latestEndpointIgnoresHiddenEvents(JenkinsRule j) throws Exception {
+        FreeStyleProject open = j.createFreeStyleProject("open");
+        j.createFreeStyleProject("secret");
+        useSecurity(j, baseRules().grant(Item.READ).onItems(open).to("bob"));
+        BuildEvent readable =
+                EventStore.instance().add("bob", "open", 1, Sound.SUCCESS).get();
+        EventStore.instance().add("bob", "secret", 2, Sound.SUCCESS);
+
+        JenkinsRule.WebClient wc = j.createWebClient();
+        wc.login("bob");
+        JSONObject body = JSONObject.fromObject(
+                wc.goTo("build-sound/latest", null).getWebResponse().getContentAsString());
+        assertEquals(readable.getId(), body.getLong("latest"));
     }
 
     @Test
