@@ -1,17 +1,20 @@
 package io.jenkins.plugins.buildsound;
 
 import hudson.Extension;
+import hudson.model.Item;
 import hudson.model.RootAction;
 import hudson.model.User;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import jenkins.model.Jenkins;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.StaplerResponse2;
 import org.kohsuke.stapler.verb.GET;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * The read-only HTTP endpoint the browser script polls: {@code <jenkins>/build-sound/latest} and
@@ -73,6 +76,9 @@ public class BuildSoundAction implements RootAction {
         JSONArray events = new JSONArray();
         List<BuildEvent> found = EventStore.instance().eventsSince(userId, after);
         for (BuildEvent event : found) {
+            if (!callerCanRead(event.getJobFullName())) {
+                continue; // job deleted, or the caller may not see it: leave the event out
+            }
             JSONObject json = new JSONObject();
             json.put("id", event.getId());
             json.put("job", event.getJobFullName());
@@ -83,6 +89,20 @@ public class BuildSoundAction implements RootAction {
         JSONObject body = startBody(userId);
         body.put("events", events);
         send(response, body);
+    }
+
+    /**
+     * True if the job still exists and the caller may read it. This runs inside the caller's own request, so
+     * Jenkins checks the permission for the caller and not for the system. Do not wrap it in a SYSTEM context.
+     */
+    private static boolean callerCanRead(String jobFullName) {
+        try {
+            Item item = Jenkins.get().getItemByFullName(jobFullName);
+            return item != null && item.hasPermission(Item.READ);
+        } catch (AccessDeniedException e) {
+            // Jenkins throws this when the caller may see that a job exists (DISCOVER) but not read it.
+            return false;
+        }
     }
 
     /** The part both answers share: which Jenkins run this is, and the caller's newest event id. */
