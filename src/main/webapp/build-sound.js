@@ -359,21 +359,30 @@
         ensureSounds();
         var audio = sounds[names[0]];
         var rest = names.slice(1);
+
+        // Runs when this sound has finished: stop listening, then play whatever is left.
+        function playNext() {
+            audio.removeEventListener("ended", playNext);
+            playInOrder(rest);
+        }
+
+        // Runs when the browser refuses to play. "ended" will never come for this attempt, so the listener is
+        // removed here. If it stayed, it would fire after some later play of the same sound and start a
+        // leftover sound nobody asked for. The rest of this batch is skipped.
+        function refused() {
+            audio.removeEventListener("ended", playNext);
+            onSoundBlocked();
+        }
+
         try {
-            if (rest.length > 0) {
-                var playNext = function () {
-                    audio.removeEventListener("ended", playNext);
-                    playInOrder(rest);
-                };
-                audio.addEventListener("ended", playNext);
-            }
+            audio.addEventListener("ended", playNext);
             audio.currentTime = 0;
             var started = audio.play();
             if (started && started.catch) {
-                started.catch(onSoundBlocked); // if the browser refuses, "ended" never comes and the rest is skipped
+                started.catch(refused);
             }
         } catch (e) {
-            onSoundBlocked();
+            refused();
         }
     }
 
