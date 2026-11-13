@@ -21,7 +21,9 @@ tests, and its behaviour in Chrome, Firefox and Safari is still being verified b
 ## Install
 
 Install it like any other plugin. Until it is released, build it yourself (see "Build and run locally") and
-upload `target/build-sound.hpi` under Manage Jenkins > Plugins > Advanced settings > Deploy Plugin.
+upload `target/build-sound.hpi` under Manage Jenkins > Plugins > Advanced settings > Deploy Plugin. A plugin built
+on your own machine records your local user name in its version string, which Jenkins shows to administrators, so
+use a local build only on a Jenkins of your own.
 
 Whether a Jenkins restart is needed after installing or removing the plugin has not been checked.
 
@@ -78,14 +80,18 @@ notification when there is more than one event. Only one open tab per browser pl
 - The "is the upstream waiting" check looks for a marker class that is private to the Pipeline build step plugin
   (`pipeline-build-step`). It is matched by class name. If that plugin renames the class, waited-for downstream
   builds will also play a sound (an extra sound, never a missing one).
-- Not tested: Parameterized Trigger "block until finished", and the Pipeline `build` step with `waitForStart: true`
-  and `wait: false`.
+- Not tested: Parameterized Trigger "block until finished".
+- The Pipeline `build` step with `waitForStart: true` and `wait: false` left no marker on the downstream build when
+  it was tried, so such a build is treated as not waited for and plays like any other build.
+- A browser may refuse to play sound on a page you have not clicked or typed in. When that happens the tab steps
+  aside so that a tab you have used can play instead; if desktop notifications are on, it keeps showing them.
+  Which browsers do this has not been checked yet.
 - A tab that has opted in keeps polling in the background, which may keep the Jenkins web session from timing out
   on idle. This is unverified.
 
 ## Upgrade and uninstall
 
-The script, worker and sound URLs carry the plugin version, so after an upgrade the browser should fetch the new
+The script, worker and sound URLs carry a short code derived from the plugin version, so after an upgrade the browser should fetch the new
 files instead of old cached ones (not yet verified in browsers). Events in memory are lost when Jenkins restarts.
 Saved on/off choices live only in the browser and are not removed by uninstalling the plugin. They are harmless
 and can be cleared with the browser's site data. Whether a restart is needed to install, upgrade or remove the
