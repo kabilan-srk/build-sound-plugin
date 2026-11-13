@@ -2,8 +2,11 @@ package io.jenkins.plugins.buildsound;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import hudson.PluginWrapper;
 import hudson.model.Item;
 import java.net.URL;
 import java.util.ArrayList;
@@ -74,9 +77,30 @@ class BuildSoundDecoratorTest {
         assertEquals(root, script.getAttribute("data-root-url"));
         assertEquals("alice", script.getAttribute("data-user-id"));
         assertEquals(root + "/plugin/build-sound", script.getAttribute("data-resource-url"));
-        assertFalse(script.getAttribute("data-version").isEmpty());
+        assertTrue(script.getAttribute("data-version").matches("[0-9a-f]{8}"));
         // The version in the attribute is the one in the script URL, so every URL changes on an upgrade.
         assertTrue(script.getAttribute("src").endsWith("?v=" + script.getAttribute("data-version")));
+    }
+
+    @Test
+    void pageNeverContainsTheRawPluginVersion() {
+        // A local snapshot version can contain the OS user name of whoever built the plugin.
+        String version = "1.0-SNAPSHOT (private-abc123-someuser)";
+        String code = BuildSoundDecorator.shortHash(version);
+        assertTrue(code.matches("[0-9a-f]{8}"));
+        assertFalse(code.contains("someuser"));
+        assertEquals(code, BuildSoundDecorator.shortHash(version)); // the same version always gives the same code
+        assertNotEquals(code, BuildSoundDecorator.shortHash("1.1")); // another version gives another code
+    }
+
+    @Test
+    void pageDoesNotContainTheRawPluginVersion(JenkinsRule j) throws Exception {
+        configure(j);
+        String html = client(j, "alice").goTo("").getWebResponse().getContentAsString();
+        PluginWrapper plugin = j.jenkins.getPluginManager().getPlugin("build-sound");
+        assertNotNull(plugin, "the plugin under test should be loaded");
+        String realVersion = plugin.getVersion();
+        assertFalse(html.contains("?v=" + realVersion), "the raw version is in the page");
     }
 
     @Test
@@ -110,6 +134,14 @@ class BuildSoundDecoratorTest {
         configure(j);
         HtmlPage page = client(j, "alice").goTo("login");
         assertEquals(0, pluginScripts(page).size());
+    }
+
+    @Test
+    void jobNamedLoginStillGetsTheScript(JenkinsRule j) throws Exception {
+        configure(j);
+        j.createFreeStyleProject("login");
+        // The address of this page ends in "/login/", and an older check by address would have hidden the script.
+        assertEquals(1, pluginScripts(client(j, "alice").goTo("job/login/")).size());
     }
 
     @Test

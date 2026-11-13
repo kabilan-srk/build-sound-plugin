@@ -2,9 +2,13 @@ package io.jenkins.plugins.buildsound;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import hudson.model.FreeStyleProject;
 import hudson.model.Item;
+import java.io.File;
 import java.net.URL;
+import java.nio.file.Files;
 import jenkins.model.Jenkins;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
+import org.jvnet.hudson.test.MockFolder;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
@@ -137,6 +142,49 @@ class BuildSoundActionTest {
         JenkinsRule.WebClient alice = client(j, "alice");
         assertEquals(
                 "alice", json(get(alice, "build-sound/events?after=0&user=bob")).getString("user"));
+    }
+
+    @Test
+    void eventCarriesTheDisplayNameForNotificationText(JenkinsRule j) throws Exception {
+        configure(j);
+        MockFolder folder = j.jenkins.createProject(MockFolder.class, "team");
+        folder.setDisplayName("Team A");
+        FreeStyleProject app = folder.createProject(FreeStyleProject.class, "app");
+        app.setDisplayName("The App");
+        add("alice", "team/app", 1, Sound.SUCCESS);
+
+        JSONObject event = json(get(client(j, "alice"), "build-sound/events?after=0"))
+                .getJSONArray("events")
+                .getJSONObject(0);
+        // "job" stays the full name (the page builds the build's address from it); "jobDisplay" is for reading.
+        assertEquals("team/app", event.getString("job"));
+        assertEquals(app.getFullDisplayName(), event.getString("jobDisplay"));
+        assertEquals("Team A \u00bb The App", event.getString("jobDisplay"));
+    }
+
+    @Test
+    void jobNameWithAnEncodedSlashRoundTripsAndItsAddressWorks(JenkinsRule j) throws Exception {
+        configure(j);
+        // A multibranch pipeline names the job of the branch "feature/foo" like this: the slash is already
+        // written as %2F inside the name, so the name itself contains a percent sign.
+        MockFolder repo = j.jenkins.createProject(MockFolder.class, "repo");
+        // The UI and createProject refuse "%" in a name, so rename the job's folder on disk and reload Jenkins.
+        repo.createProject(FreeStyleProject.class, "temp");
+        File jobs = new File(repo.getRootDir(), "jobs");
+        Files.move(new File(jobs, "temp").toPath(), new File(jobs, "feature%2Ffoo").toPath());
+        j.jenkins.reload();
+        assertNotNull(j.jenkins.getItemByFullName("repo/feature%2Ffoo"));
+        add("alice", "repo/feature%2Ffoo", 3, Sound.SUCCESS);
+
+        JenkinsRule.WebClient wc = client(j, "alice");
+        JSONObject event = json(get(wc, "build-sound/events?after=0"))
+                .getJSONArray("events")
+                .getJSONObject(0);
+        assertEquals("repo/feature%2Ffoo", event.getString("job"));
+
+        // The page encodes every part of the name once more (encodeURIComponent), so "%" becomes "%25".
+        // Jenkins decodes the address once, and the job is found.
+        assertEquals(200, get(wc, "job/repo/job/feature%252Ffoo/").getStatusCode());
     }
 
     @Test

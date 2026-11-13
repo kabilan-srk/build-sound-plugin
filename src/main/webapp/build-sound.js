@@ -13,6 +13,9 @@
     var POLL_MS = 5000;
     var MAX_WAIT_MS = 5 * 60 * 1000; // the longest pause between requests after Jenkins refused us
     var CLAIM_MS = 15000; // a tab's claim to play runs out if it is not renewed for this long (a closed tab)
+    // A tab on the page-timer fallback can go a whole minute between ticks, so its claim must live longer than that.
+    var FALLBACK_CLAIM_MS = 90000;
+    var MAX_SUMMARY_LINES = 3; // the summary notification for several builds lists at most this many
 
     // The values Jenkins gave us in the data- attributes of our own <script> tag.
     var script = document.currentScript;
@@ -33,6 +36,7 @@
     var busy = false; // true while a request is in flight, so slow replies never pile up
     var notBefore = 0; // after a refusal (401, 403, 404) no request is sent before this time (ms)
     var waitMs = POLL_MS; // how long we wait after the next refusal; doubles each time
+    var claimMs = CLAIM_MS; // how long this tab's claim stays valid; longer when we run on the page timer
 
     // Sound state, declared here because the functions below use it.
     var sounds = null; // the two Audio objects, created only when sound is first wanted
@@ -205,6 +209,10 @@
         try {
             var claim = JSON.parse(storageGet(CLAIM_KEY));
             if (claim && typeof claim.tab === "string" && typeof claim.time === "number") {
+                // Every claim carries its own lifetime: tabs on the page timer write a longer one than the others.
+                if (typeof claim.ttl !== "number") {
+                    claim.ttl = CLAIM_MS;
+                }
                 return claim;
             }
         } catch (e) {}
@@ -226,10 +234,19 @@
             return;
         }
         var claim = readClaim();
-        var free = claim === null || Date.now() - claim.time > CLAIM_MS;
-        if (free || claim.tab === tabId) {
-            storageSet(CLAIM_KEY, JSON.stringify({ tab: tabId, time: Date.now() }));
+        if (claimIsFree(claim) || claim.tab === tabId) {
+            storageSet(CLAIM_KEY, JSON.stringify({ tab: tabId, time: Date.now(), ttl: claimMs }));
         }
+    }
+
+    // Nobody holds it, or the holder stopped renewing it. A negative age means the computer's clock was set
+    // back since the claim was written, so the claim cannot be trusted: treat it as free.
+    function claimIsFree(claim) {
+        if (claim === null) {
+            return true;
+        }
+        var age = Date.now() - claim.time;
+        return age < 0 || age > claim.ttl;
     }
 
     // True if this tab holds the claim. Two tabs can write at the same moment and the later write wins, so
@@ -313,14 +330,26 @@
         releaseClaim();
     }
 
-    function playSound(name) {
+    // Plays the sounds one after the other, so they never overlap: the next one starts when the one before ends.
+    function playInOrder(names) {
+        if (names.length === 0) {
+            return;
+        }
         ensureSounds();
-        var audio = sounds[name];
+        var audio = sounds[names[0]];
+        var rest = names.slice(1);
         try {
+            if (rest.length > 0) {
+                var playNext = function () {
+                    audio.removeEventListener("ended", playNext);
+                    playInOrder(rest);
+                };
+                audio.addEventListener("ended", playNext);
+            }
             audio.currentTime = 0;
             var started = audio.play();
             if (started && started.catch) {
-                started.catch(onSoundBlocked);
+                started.catch(onSoundBlocked); // if the browser refuses, "ended" never comes and the rest is skipped
             }
         } catch (e) {
             onSoundBlocked();
@@ -357,23 +386,46 @@
         return rootUrl + "/" + parts.join("") + encodeURIComponent(String(number)) + "/";
     }
 
-    function showNotification(event) {
+    // What a person reads for a build: the display name of the job (for example "repo » feature/foo" for a
+    // multibranch job) and the build number. Falls back to the full name if the display name is missing.
+    function buildText(event) {
+        var name = typeof event.jobDisplay === "string" && event.jobDisplay !== "" ? event.jobDisplay : event.job;
+        return name + " #" + event.number;
+    }
+
+    // Shows one notification. Both texts are plain text: a notification never treats them as HTML.
+    // Clicking it brings this window to the front and opens the given address in a new tab, so whatever the
+    // user had open here (maybe an unsaved form) is not replaced.
+    function notify(title, body, tag, address) {
         try {
-            var title = event.sound === "success" ? "Build succeeded" : "Build failed or unstable";
-            // The job name goes in as plain text: a notification never treats it as HTML.
-            var notification = new Notification(title, {
-                body: event.job + " #" + event.number,
-                tag: "build-sound:" + event.job + ":" + event.number
-            });
+            var notification = new Notification(title, { body: body, tag: tag });
             notification.onclick = function () {
                 try {
                     window.focus();
                 } catch (e) {}
-                // A new tab, so whatever the user had open here (maybe an unsaved form) is not replaced.
-                window.open(buildUrl(event.job, event.number), "_blank");
+                window.open(address, "_blank");
                 notification.close();
             };
         } catch (e) {} // some browsers throw here (for example on Android): then there is just no notification
+    }
+
+    function showNotification(event) {
+        var title = event.sound === "success" ? "Build succeeded" : "Build failed or unstable";
+        notify(
+            title,
+            buildText(event),
+            "build-sound:" + event.job + ":" + event.number,
+            buildUrl(event.job, event.number)
+        );
+    }
+
+    // Several builds finished together: one notification instead of a pile of them.
+    function showSummaryNotification(events) {
+        var lines = events.slice(0, MAX_SUMMARY_LINES).map(buildText);
+        if (events.length > MAX_SUMMARY_LINES) {
+            lines.push("and " + (events.length - MAX_SUMMARY_LINES) + " more");
+        }
+        notify(events.length + " builds finished", lines.join("\n"), "build-sound:summary", rootUrl + "/");
     }
 
     // Asks the browser for permission. This must be called from the user's click, never on page load.
@@ -411,17 +463,31 @@
         if ((!wantSound && !wantNotification) || !holdsClaim()) {
             return;
         }
-        events.forEach(function (event) {
-            if (event.sound !== "success" && event.sound !== "problem") {
-                return;
-            }
-            if (wantNotification) {
-                showNotification(event); // notifications never need a click, so they come before the sound
-            }
-            if (wantSound) {
-                playSound(event.sound);
-            }
+        var valid = events.filter(function (event) {
+            return event.sound === "success" || event.sound === "problem";
         });
+        if (valid.length === 0) {
+            return;
+        }
+        if (wantNotification) {
+            // Notifications never need a click, so they come before the sound.
+            if (valid.length === 1) {
+                showNotification(valid[0]);
+            } else {
+                showSummaryNotification(valid);
+            }
+        }
+        if (wantSound) {
+            // At most one sound per kind, the problem first: the user most needs to hear that.
+            var names = [];
+            if (valid.some(function (event) { return event.sound === "problem"; })) {
+                names.push("problem");
+            }
+            if (valid.some(function (event) { return event.sound === "success"; })) {
+                names.push("success");
+            }
+            playInOrder(names);
+        }
     }
 
     // ---- the on/off control ------------------------------------------------------------------------------
@@ -527,10 +593,12 @@
         }
         console.info("[build-sound] using a page timer instead of a Web Worker (" + reason + "); " +
             "in a background tab the check may be late by up to about a minute");
+        claimMs = FALLBACK_CLAIM_MS;
         pageTimer = setInterval(tick, POLL_MS);
     }
 
     function startClock() {
+        claimMs = CLAIM_MS;
         var thisWorker;
         try {
             thisWorker = new Worker(resourceUrl + "/build-sound-worker.js?v=" + encodeURIComponent(version));

@@ -2,8 +2,11 @@ package io.jenkins.plugins.buildsound;
 
 import hudson.model.Result;
 import java.util.Optional;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /** The two sounds the plugin can ask the browser to play. */
+@Restricted(NoExternalUse.class)
 public enum Sound {
     SUCCESS,
     PROBLEM;

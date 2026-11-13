@@ -54,7 +54,7 @@ public class BuildSoundAction implements RootAction {
         // The newest of the caller's events that the caller may read; 0 if there is none.
         long latest = 0;
         for (BuildEvent event : EventStore.instance().eventsSince(userId, 0)) {
-            if (callerCanRead(event.getJobFullName())) {
+            if (readableJob(event.getJobFullName()) != null) {
                 latest = event.getId();
             }
         }
@@ -88,12 +88,15 @@ public class BuildSoundAction implements RootAction {
         // shows that other events exist, never what they are.)
         long latest = after;
         for (BuildEvent event : found) {
-            if (!callerCanRead(event.getJobFullName())) {
+            Item job = readableJob(event.getJobFullName());
+            if (job == null) {
                 continue; // job deleted, or the caller may not see it: leave the event out
             }
             JSONObject json = new JSONObject();
             json.put("id", event.getId());
-            json.put("job", event.getJobFullName());
+            json.put("job", event.getJobFullName()); // the full name: the page builds the build's address from it
+            // The name people read (folder and job display names). The page uses it only for notification text.
+            json.put("jobDisplay", job.getFullDisplayName());
             json.put("number", event.getBuildNumber());
             json.put("sound", event.getSound().name().toLowerCase(Locale.ROOT));
             events.add(json);
@@ -105,16 +108,17 @@ public class BuildSoundAction implements RootAction {
     }
 
     /**
-     * True if the job still exists and the caller may read it. This runs inside the caller's own request, so
-     * Jenkins checks the permission for the caller and not for the system. Do not wrap it in a SYSTEM context.
+     * The job if it still exists and the caller may read it, otherwise null. This runs inside the caller's own
+     * request, so Jenkins checks the permission for the caller and not for the system. Do not wrap it in a SYSTEM
+     * context.
      */
-    private static boolean callerCanRead(String jobFullName) {
+    private static Item readableJob(String jobFullName) {
         try {
             Item item = Jenkins.get().getItemByFullName(jobFullName);
-            return item != null && item.hasPermission(Item.READ);
+            return item != null && item.hasPermission(Item.READ) ? item : null;
         } catch (AccessDeniedException e) {
             // Jenkins throws this when the caller may see that a job exists (DISCOVER) but not read it.
-            return false;
+            return null;
         }
     }
 

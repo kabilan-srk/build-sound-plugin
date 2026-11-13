@@ -5,10 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.Result;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -19,32 +16,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class EventStoreTest {
 
-    /** A clock the test can move forward by hand. */
-    private static class TestClock extends Clock {
-        private Instant now = Instant.parse("2026-01-01T00:00:00Z");
+    /** A clock the test can move forward by hand. It counts nanoseconds, like System.nanoTime. */
+    private static class TestClock implements LongSupplier {
+        private long nanos;
+
+        TestClock(long start) {
+            this.nanos = start;
+        }
 
         void advance(Duration amount) {
-            now = now.plus(amount);
+            nanos += amount.toNanos();
         }
 
         @Override
-        public Instant instant() {
-            return now;
-        }
-
-        @Override
-        public java.time.ZoneId getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(java.time.ZoneId zone) {
-            return this;
+        public long getAsLong() {
+            return nanos;
         }
     }
 
@@ -53,7 +45,7 @@ class EventStoreTest {
 
     @BeforeEach
     void setUp() {
-        clock = new TestClock();
+        clock = new TestClock(5_000_000_000L);
         store = new EventStore(20, Duration.ofMinutes(5), clock);
         store.clear();
     }
@@ -104,6 +96,27 @@ class EventStoreTest {
         addFor("alice");
         clock.advance(Duration.ofMinutes(5).minusMillis(1));
         assertEquals(1, store.eventsSince("alice", 0).size());
+    }
+
+    @Test
+    void expiryStillWorksWhenTheNanoClockWrapsAround() {
+        // System.nanoTime may start at any number, even a negative one, and can wrap past Long.MAX_VALUE.
+        TestClock nearTheEnd =
+                new TestClock(Long.MAX_VALUE - Duration.ofMinutes(1).toNanos());
+        EventStore wrapStore = new EventStore(20, Duration.ofMinutes(5), nearTheEnd);
+        wrapStore.add("alice", "job", 1, Sound.SUCCESS);
+
+        nearTheEnd.advance(Duration.ofMinutes(4)); // the clock value is now negative, the event is 4 minutes old
+        assertEquals(1, wrapStore.eventsSince("alice", 0).size());
+        nearTheEnd.advance(Duration.ofMinutes(1)); // 5 minutes old
+        assertTrue(wrapStore.eventsSince("alice", 0).isEmpty());
+    }
+
+    @Test
+    void clearDoesNotResetTheIdCounter() {
+        long first = addFor("alice").getId();
+        store.clear();
+        assertTrue(addFor("alice").getId() > first);
     }
 
     @Test

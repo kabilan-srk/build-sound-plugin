@@ -5,8 +5,8 @@ import hudson.PluginWrapper;
 import hudson.model.PageDecorator;
 import hudson.model.User;
 import jenkins.model.Jenkins;
-import org.kohsuke.stapler.Stapler;
-import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 /**
  * Adds the Build Sound script to the bottom of Jenkins pages. Jenkins renders {@code footer.jelly} of every
@@ -16,35 +16,34 @@ import org.kohsuke.stapler.StaplerRequest2;
 public class BuildSoundDecorator extends PageDecorator {
 
     /** The id of the logged-in user, or null when nobody is logged in. */
+    @Restricted(NoExternalUse.class)
     public String getUserId() {
         User user = User.current();
         return user == null ? null : user.getId();
     }
 
     /**
-     * True only for a logged-in user on a normal page. Anonymous visitors cannot call the endpoint, and the
-     * login page must stay free of extra scripts (even for someone who is already logged in).
+     * True only for a logged-in user. Anonymous visitors cannot call the endpoint. The login page needs no check
+     * of its own: Jenkins does not render page decorators there (a test checks this, also for a logged-in user).
      */
+    @Restricted(NoExternalUse.class)
     public boolean isActive() {
-        if (getUserId() == null) {
-            return false;
-        }
-        StaplerRequest2 request = Stapler.getCurrentRequest2();
-        if (request != null) {
-            String path = request.getRequestURI();
-            if (path != null && path.endsWith("/login")) {
-                return false;
-            }
-        }
-        return true;
+        return getUserId() != null;
     }
 
     /**
-     * The plugin version. It is added to the script, worker and sound URLs so that after an upgrade the browser
-     * fetches the new files instead of using its cached copies.
+     * A short code for the plugin version. It is added to the script, worker and sound URLs so that after an
+     * upgrade the browser fetches the new files instead of using its cached copies. It is a hash and not the
+     * version itself, because a local snapshot version can contain the name of the user who built it.
      */
+    @Restricted(NoExternalUse.class)
     public String getVersion() {
         PluginWrapper plugin = Jenkins.get().getPluginManager().getPlugin("build-sound");
-        return plugin == null ? "dev" : plugin.getVersion();
+        return shortHash(plugin == null ? "dev" : plugin.getVersion());
+    }
+
+    /** Eight hex digits that depend only on the text, so the same version always gives the same code. */
+    static String shortHash(String text) {
+        return String.format("%08x", text.hashCode());
     }
 }
