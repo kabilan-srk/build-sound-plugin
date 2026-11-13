@@ -128,7 +128,7 @@ class BuildSoundDecoratorTest {
     }
 
     @Test
-    void scriptAndWorkerAreServed(JenkinsRule j) throws Exception {
+    void scriptWorkerAndSoundsAreServed(JenkinsRule j) throws Exception {
         configure(j);
         JenkinsRule.WebClient wc = client(j, "alice");
         DomElement script = pluginScripts(wc.goTo("")).get(0);
@@ -137,5 +137,7 @@ class BuildSoundDecoratorTest {
 
         assertEquals(200, status(j, wc, script.getAttribute("src")));
         assertEquals(200, status(j, wc, resources + "/build-sound-worker.js?v=" + version));
+        assertEquals(200, status(j, wc, resources + "/sounds/success.wav?v=" + version));
+        assertEquals(200, status(j, wc, resources + "/sounds/problem.wav?v=" + version));
     }
 }

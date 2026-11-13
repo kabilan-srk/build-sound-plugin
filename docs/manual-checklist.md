@@ -24,7 +24,9 @@ sound and notifications, so do not skip it.
 
 ## Task 7: page script and polling
 
-Log in as `alice`. Keep the developer Console open. The script only writes lines starting with `[build-sound]`.
+Log in as `alice`. Keep the developer Console open. (These steps were written when the script only logged events
+to the console. From Task 8 on it plays sounds instead, so in steps 4, 5 and 9 read "logs the event" as "makes the
+sound", and use the Network tab to see the `events` replies.)
 
 1. Open any Jenkins page as `alice` and look at the Network tab (reload the page).
    Expected: a request for `plugin/build-sound/build-sound.js?v=...` and one for `build-sound-worker.js?v=...`,
@@ -64,3 +66,52 @@ Log in as `alice`. Keep the developer Console open. The script only writes lines
     (see the build page), and the `events` requests in the Network tab show steady 5-second spacing (not one per
     minute) during the hidden time. Do this in Chrome, Firefox and Safari. Browsers change this behaviour
     between versions, so repeat it after big browser updates.
+
+## Task 8: sounds, opt-in and tab handling
+
+Use a fresh browser profile or clear site data for `localhost` first, so no old setting is stored. Turn the
+computer volume to a normal level.
+
+1. Log in as `alice` and look at the bottom right corner of any page.
+   Expected: a small button `Build sound: off` with a dashed border. It does not cover or move any Jenkins content.
+   (On a job's "Configure" page it floats over the bottom corner; it must not push the Save button around.)
+2. Press Tab until the button has focus, then press Enter.
+   Expected: the button can be reached with the keyboard, shows a focus outline, and switches to `Build sound: on`
+   with a solid green border. Press Enter again: back to `off`. Leave it `on`.
+3. Reload the page and look at the button.
+   Expected: it still says `on` (the choice is remembered in the browser).
+4. Opt-in is required. Set the button to `off`, click somewhere on the page, start `quick-ok` and wait.
+   Expected: no sound at all. Then set it to `on` again.
+5. Right sound for the result. With the button `on`, click once anywhere on the page (this lets the browser
+   play audio), start `quick-ok`.
+   Expected: about 10 seconds after it ends, the soft two-note rising chime. Then start `quick-fail`.
+   Expected: the lower falling bell, clearly a different sound.
+6. A tab nobody has clicked in cannot play. Reload the page, do **not** click or press any key in it, start a build
+   from another window.
+   Expected: no sound from the untouched tab. After you click once in the tab, the next build plays the sound.
+7. Opting out silences it in every tab. Open two `alice` tabs, click in both, set the button to `off` in one.
+   Expected: the other tab's button changes to `off` within a moment and the next build is silent.
+8. Another user on the same browser has not opted in. Log out, log in as `bob` in the same browser, click once in
+   the page and look at the button.
+   Expected: it says `off`. Start a build as `bob` (give `bob` the same jobs, or create one): no sound until
+   `bob` turns it on. Log back in as `alice`: her button still says `on`.
+9. One tab plays. Open the same `alice` Jenkins page in **three** tabs, click once in each, with the button `on`.
+   Start `quick-ok` and wait for the end.
+   Expected: exactly one chime, not two or three. Close the tab that played (wait about 20 seconds for its claim to
+   run out), start `quick-ok` again.
+   Expected: one of the remaining tabs plays it, once.
+10. Sound with the tab in the background. Click once in the `alice` tab, switch to another tab, start `quick-ok`
+    from another window, stay on the other tab until it finishes.
+    Expected: you hear the chime within about 10 seconds of the build ending. Repeat with the tab hidden for more
+    than 8 minutes (see Task 7, step 12). The sound must still arrive within about 10 seconds.
+11. A restart does not replay. With the button `on`, restart Jenkins (see Task 7, step 8).
+    Expected: no sound when the tab reconnects.
+12. Blocked storage does not break the page. In a private window with "block all cookies" (or Safari with
+    "Block all cookies") log in, open the Console.
+    Expected: no red errors from `build-sound.js`; the button shows `off` and may not remember changes.
+13. The packaged plugin does not contain the generator. After `mvn package`, run
+    `unzip -l target/build-sound.hpi | grep -E "make_sounds|sounds/"`.
+    Expected: only `sounds/success.wav` and `sounds/problem.wav` are listed.
+14. Repeat steps 2, 5, 6 and 9 in Chrome, Firefox and Safari. Safari is the one most likely to stay silent until the
+    first click, and to show the button wrongly if something in the script is not supported: write down any
+    difference.
