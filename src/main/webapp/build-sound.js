@@ -1,5 +1,5 @@
 // Build Sound: asks Jenkins every 5 seconds whether a build started by this user has finished, and plays
-// a sound when one has. Loaded on every Jenkins page for logged-in users (see BuildSoundDecorator).
+// a sound and/or shows a desktop notification when one has. Loaded on every Jenkins page for logged-in users (see BuildSoundDecorator).
 (function () {
     "use strict";
 
@@ -52,6 +52,7 @@
 
     // The user id is in every key, so on a shared browser each Jenkins user has their own choices.
     var SOUND_KEY = "build-sound.sound." + userId;
+    var NOTIFY_KEY = "build-sound.notify." + userId;
     var CLAIM_KEY = "build-sound.claim." + userId;
 
     // The choice is read every time it is needed (not kept in a variable), so switching it in one tab
@@ -233,15 +234,96 @@
         } catch (e) {}
     }
 
+    // ---- desktop notifications ---------------------------------------------------------------------------
+
+    // Browsers only allow notifications on secure pages (https, or localhost). If the page is not secure or
+    // the browser has no Notification support, the whole feature is switched off and the button is not shown.
+    function notificationsSupported() {
+        return window.isSecureContext === true && typeof window.Notification === "function";
+    }
+
+    function notificationPermission() {
+        try {
+            return window.Notification.permission;
+        } catch (e) {
+            return "denied";
+        }
+    }
+
+    // On means two things: the user chose it, and the browser still allows it.
+    function notificationsEnabled() {
+        return notificationsSupported() && storageGet(NOTIFY_KEY) === "on" && notificationPermission() === "granted";
+    }
+
+    // The page of one build, for example job/folder/job/app/12/ for the job "folder/app" build 12.
+    // Every part of the name is URL-encoded, so a name with spaces or odd characters cannot break the address.
+    function buildUrl(jobFullName, number) {
+        var parts = String(jobFullName).split("/").map(function (part) {
+            return "job/" + encodeURIComponent(part) + "/";
+        });
+        return rootUrl + "/" + parts.join("") + encodeURIComponent(String(number)) + "/";
+    }
+
+    function showNotification(event) {
+        try {
+            var title = event.sound === "success" ? "Build succeeded" : "Build failed or unstable";
+            // The job name goes in as plain text: a notification never treats it as HTML.
+            var notification = new Notification(title, {
+                body: event.job + " #" + event.number,
+                tag: "build-sound:" + event.job + ":" + event.number
+            });
+            notification.onclick = function () {
+                try {
+                    window.focus();
+                } catch (e) {}
+                // A new tab, so whatever the user had open here (maybe an unsaved form) is not replaced.
+                window.open(buildUrl(event.job, event.number), "_blank");
+                notification.close();
+            };
+        } catch (e) {} // some browsers throw here (for example on Android): then there is just no notification
+    }
+
+    // Asks the browser for permission. This must be called from the user's click, never on page load.
+    // Older Safari answers through a callback and newer browsers through a promise: use whichever comes first.
+    function requestNotificationPermission(done) {
+        var answered = false;
+        function finish(result) {
+            if (!answered) {
+                answered = true;
+                done(result);
+            }
+        }
+        try {
+            var promise = window.Notification.requestPermission(finish);
+            if (promise && promise.then) {
+                promise.then(finish, function () {
+                    finish("denied");
+                });
+            }
+        } catch (e) {
+            finish("denied");
+        }
+    }
+
     // ---- what to do with new events ----------------------------------------------------------------------
 
     function handleEvents(events) {
-        // Not opted in, or another tab is the one that plays: stay quiet.
-        if (!soundEnabled() || !claimToPlay()) {
+        var wantSound = soundEnabled();
+        var wantNotification = notificationsEnabled();
+        // Nothing opted in, or another tab is the one that plays and notifies: stay quiet.
+        if ((!wantSound && !wantNotification) || !claimToPlay()) {
             return;
         }
         events.forEach(function (event) {
-            playSound(event.sound);
+            if (event.sound !== "success" && event.sound !== "problem") {
+                return;
+            }
+            if (wantSound) {
+                playSound(event.sound);
+            }
+            if (wantNotification) {
+                showNotification(event);
+            }
         });
     }
 
@@ -250,6 +332,7 @@
     // A small button in the bottom right corner. It is fixed in place, so it takes no room in the page and
     // cannot push Jenkins's own layout around. It is a real <button>, so it works with Tab and Enter/Space.
     var soundButton = null;
+    var notifyButton = null;
 
     function styleButton(button, on) {
         button.style.cssText =
@@ -267,11 +350,48 @@
             ? "Plays a sound when a build you started finishes. Click to turn off."
             : "Click to play a sound when a build you started finishes.";
         styleButton(soundButton, on);
+
+        if (notifyButton) {
+            var notify = notificationsEnabled();
+            var blocked = notificationPermission() === "denied";
+            notifyButton.textContent = "Desktop notifications: " + (notify ? "on" : blocked ? "blocked" : "off");
+            notifyButton.setAttribute("aria-pressed", notify ? "true" : "false");
+            notifyButton.title = notify
+                ? "Shows a notification when a build you started finishes. Click to turn off."
+                : blocked
+                  ? "The browser blocks notifications for this site. Allow them in the browser's site settings."
+                  : "Click to show a notification when a build you started finishes.";
+            styleButton(notifyButton, notify);
+        }
+    }
+
+    function toggleNotifications() {
+        if (notificationsEnabled()) {
+            storageSet(NOTIFY_KEY, "off");
+            refreshControls();
+            return;
+        }
+        if (notificationPermission() === "granted") {
+            storageSet(NOTIFY_KEY, "on");
+            refreshControls();
+            return;
+        }
+        if (notificationPermission() === "denied") {
+            refreshControls(); // nothing we can do: only the user can unblock it in the browser settings
+            return;
+        }
+        // Permission not asked yet: ask now, because the user just clicked.
+        requestNotificationPermission(function (result) {
+            if (result === "granted") {
+                storageSet(NOTIFY_KEY, "on");
+            }
+            refreshControls();
+        });
     }
 
     function buildControls() {
         var box = document.createElement("div");
-        box.style.cssText = "position: fixed; right: 12px; bottom: 12px; z-index: 50; display: flex; gap: 6px;";
+        box.style.cssText = "position: fixed; right: 12px; bottom: 12px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 90vw;";
         soundButton = document.createElement("button");
         soundButton.type = "button";
         soundButton.addEventListener("click", function () {
@@ -279,6 +399,12 @@
             refreshControls();
         });
         box.appendChild(soundButton);
+        if (notificationsSupported()) {
+            notifyButton = document.createElement("button");
+            notifyButton.type = "button";
+            notifyButton.addEventListener("click", toggleNotifications);
+            box.appendChild(notifyButton);
+        }
         document.body.appendChild(box);
         refreshControls();
         // Keep the button right when another tab changes the setting.

@@ -115,3 +115,50 @@ computer volume to a normal level.
 14. Repeat steps 2, 5, 6 and 9 in Chrome, Firefox and Safari. Safari is the one most likely to stay silent until the
     first click, and to show the button wrongly if something in the script is not supported: write down any
     difference.
+
+## Task 8b: desktop notifications
+
+Desktop notifications need a secure page: `http://localhost:8090/jenkins/` counts, a plain `http://` address on
+another host does not. Also make sure the operating system lets the browser show notifications (macOS: System
+Settings > Notifications > your browser, and Focus/Do Not Disturb off). Clear site data for `localhost` first
+so no earlier permission is remembered. Log in as `alice`.
+
+1. Look at the bottom right corner.
+   Expected: next to `Build sound: ...` there is a second button `Desktop notifications: off`. No permission
+   prompt has appeared yet, just from loading pages (reload a few times to be sure).
+2. Click `Desktop notifications: off` and choose **Allow** in the browser prompt.
+   Expected: the prompt appears only now, after your click. The button becomes `Desktop notifications: on`
+   with a solid green border. Reload: it still says `on`.
+3. Show a notification with sound off. Set `Build sound` to `off`, click once in the page, start `quick-ok`.
+   Expected: no sound, but a system notification titled `Build succeeded` with the text `quick-ok #<number>`.
+   Start `quick-fail`. Expected: a notification titled `Build failed or unstable` with `quick-fail #<number>`.
+4. Notification with the tab in the background and in another app. Click once in the `alice` tab, switch to
+   another tab (or app), start `quick-ok` from another window.
+   Expected: the notification appears within about 10 seconds of the build ending, even though the tab is hidden.
+   Also check it with `Build sound` on: you get the notification and the chime together.
+5. Clicking the notification. Click it.
+   Expected: the browser window comes to the front and a new tab opens on that build's page,
+   `.../job/quick-ok/<number>/`. The tab you had open is unchanged. Repeat for a job inside a folder (create a folder
+   `team` with a job `my app`, run it): the address is `.../job/team/job/my%20app/<number>/` and the page loads.
+6. Two tabs show one notification. Open the `alice` page in three tabs, click once in each, start `quick-ok`.
+   Expected: exactly one notification, not three.
+7. Turning it off. Click the button so it says `off`, start a build.
+   Expected: no notification. Any other open `alice` tab also shows `off` within a moment.
+8. Denied permission. Reset the site permission for `localhost` (Chrome: padlock icon > Site settings > Notifications
+   > Ask; Firefox and Safari: the site settings), reload, click the notification button and choose **Block**.
+   Expected: the button stays off and then reads `Desktop notifications: blocked`; builds still play the sound if
+   that is on; nothing is shown and the Console has no red errors. Allow it again in the site settings, reload,
+   click the button: it turns `on`.
+9. Permission taken away later. With the button `on`, block notifications in the site settings and reload.
+   Expected: the button shows `blocked`; no error; the next build still plays the sound.
+10. A different user on the same browser has not opted in. Log out, log in as `bob`, look at the buttons.
+    Expected: `Desktop notifications: off` for `bob` while `alice` stays `on` when she logs back in.
+11. Not a secure page. Start Jenkins with `-Dport=8090 -Dhost=0.0.0.0` and open
+    `http://<your computer's LAN address>:8090/jenkins/` (for example `http://192.168.1.20:8090/jenkins/`).
+    Log in as `alice`, open the Console.
+    Expected: only `Build sound: ...` is shown, there is no notification button, no permission prompt, no red errors
+    in the Console, and a build still plays the sound once you opted in.
+12. The job name is plain text. If you made the `x<b>y` job in Task 7 step 10, run it.
+    Expected: the notification text shows `x<b>y` exactly as written (no bold text).
+13. Safari. Repeat steps 2, 3, 5 and 6 in Safari, which asks for permission only after a click and may also ask in
+    macOS system settings. Also repeat steps 2, 3 and 6 in Chrome and Firefox.
