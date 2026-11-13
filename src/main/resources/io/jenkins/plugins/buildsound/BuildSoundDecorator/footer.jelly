@@ -1,0 +1,15 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core">
+  <j:if test="${it.active}">
+    <!--
+      An external file, not inline script, so it also works under a strict Content-Security-Policy.
+      The values the script needs are passed as data- attributes; Jelly escapes them.
+    -->
+    <script src="${rootURL}/plugin/build-sound/build-sound.js?v=${it.version}"
+            data-root-url="${rootURL}"
+            data-resource-url="${rootURL}/plugin/build-sound"
+            data-version="${it.version}"
+            data-user-id="${it.userId}"
+            defer="defer"></script>
+  </j:if>
+</j:jelly>
