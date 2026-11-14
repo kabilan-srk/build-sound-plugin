@@ -86,9 +86,23 @@ notification when there is more than one event. Only one open tab per browser pl
   it was tried, so such a build is treated as not waited for and plays like any other build.
 - A browser may refuse to play sound on a page you have not clicked or typed in. When that happens the tab steps
   aside so that a tab you have used can play instead; if desktop notifications are on, it keeps showing them.
-  Which browsers do this has not been checked yet.
+  Chrome and Safari both refused the sound on a page that was reloaded and not clicked, and both played it on a
+  page reached by following a link.
 - A tab that has opted in keeps polling in the background, which may keep the Jenkins web session from timing out
   on idle. This is unverified.
+
+## Tested browsers
+
+The browser side has no automated tests. It was checked by hand with [docs/manual-checklist.md](docs/manual-checklist.md)
+on a local Jenkins 2.568.3, in Chrome 157 and Safari 26 on macOS 26:
+
+- Sound and notifications on the open page, on a hidden tab, and after the tab had been hidden for 10 minutes
+  (Chrome only for the 10-minute wait).
+- One sound and one notification with several tabs open, and the summary notification for three builds.
+- Jenkins served with and without a context path (`/jenkins/` and `/`).
+
+Not checked by hand: Firefox, jobs inside folders (covered by the automated tests and a check of the address
+function only), job display names, a page that is not a secure context, and a browser with all cookies blocked.
 
 ## Upgrade and uninstall
 
