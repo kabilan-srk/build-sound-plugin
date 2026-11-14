@@ -6,8 +6,8 @@ another for a failed or unstable build. Only the person who started the build is
 configured by an administrator.
 
 **Status:** pre-release. The server side is covered by automated tests. The browser script has no automated
-tests, and its behaviour in Chrome, Firefox and Safari is still being verified by hand (see
-[docs/manual-checklist.md](docs/manual-checklist.md)). Nothing here should be read as verified in a browser yet.
+tests; it was checked by hand in Chrome and Safari on a local Jenkins (see "Tested browsers" below and
+[docs/manual-checklist.md](docs/manual-checklist.md)). It has not been checked in Firefox or on a production Jenkins yet.
 
 ## Requirements
 
