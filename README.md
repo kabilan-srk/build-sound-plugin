@@ -30,7 +30,8 @@ Whether a Jenkins restart is needed after installing or removing the plugin has 
 ## Turn it on
 
 Both features are off by default, and nothing is played or shown until you turn one on. Once you are logged in,
-two small buttons appear in the bottom right corner of Jenkins pages:
+two small buttons appear at the bottom of Jenkins pages, in the footer row next to "REST API" and the version
+number (in a narrow window, where Jenkins hides its footer, as a row at the end of the page):
 
 - `Build sound: off` switches the sound on or off.
 - `Desktop notifications: off` switches notifications on or off. The browser asks for permission only after you

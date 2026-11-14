@@ -522,11 +522,24 @@
 
     // ---- the on/off control ------------------------------------------------------------------------------
 
-    // A small button in the bottom right corner. It is fixed in place, so it takes no room in the page and
-    // cannot push Jenkins's own layout around. It is a real <button>, so it works with Tab and Enter/Space.
-    // The controls are always shown, so the user can turn the features on.
+    // Two small buttons in Jenkins's own footer row, next to "REST API" and the version number. They are part
+    // of the page (not floating over it), so they can never cover other content. Each is a real <button>, so
+    // it works with Tab and Enter/Space. The controls are always shown, so the user can turn the features on.
+    var controlsBox = null;
     var soundButton = null;
     var notifyButton = null;
+
+    // Puts the box in the footer row. Jenkins hides its footer in a narrow window, and some pages have none;
+    // then the box becomes a row of its own at the very end of the page.
+    function placeControls() {
+        var links = document.querySelector("footer.page-footer .page-footer__links");
+        var footerShown = links !== null && links.offsetParent !== null; // offsetParent is null when hidden
+        var parent = footerShown ? links : document.body;
+        if (controlsBox.parentNode !== parent) { // moving a button takes keyboard focus away, so only if needed
+            parent.insertBefore(controlsBox, footerShown ? links.firstChild : null);
+        }
+        controlsBox.style.padding = footerShown ? "0" : "8px 12px";
+    }
 
     function styleButton(button, on) {
         button.style.cssText =
@@ -596,7 +609,8 @@
 
     function buildControls() {
         var box = document.createElement("div");
-        box.style.cssText = "position: fixed; right: 12px; bottom: 12px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 90vw;";
+        box.style.cssText = "display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px;";
+        controlsBox = box;
         soundButton = document.createElement("button");
         soundButton.type = "button";
         soundButton.addEventListener("click", toggleSound);
@@ -607,7 +621,8 @@
             notifyButton.addEventListener("click", toggleNotifications);
             box.appendChild(notifyButton);
         }
-        document.body.appendChild(box);
+        placeControls();
+        window.addEventListener("resize", placeControls); // the footer comes and goes with the window width
         refreshControls();
     }
 

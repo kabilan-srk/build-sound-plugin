@@ -35,10 +35,11 @@ computer volume.
    Expected: the page loads `plugin/build-sound/build-sound.js?v=...` (status 200) and nothing else from the plugin:
    no request to `build-sound/latest` or `build-sound/events`, no `build-sound-worker.js`, no `.wav` file. Wait a
    minute: still no plugin requests.
-2. Look at the bottom right corner of the page.
+2. Scroll to the bottom of the page and look at the footer row.
    Expected: a small button `Build sound: off` with a dashed border and (on a secure page) a second button
-   `Desktop notifications: off`. They do not cover or move any Jenkins content. On a job's "Configure" page they
-   float over the bottom corner and must not push the Save button around. No permission prompt has appeared.
+   `Desktop notifications: off`, next to "REST API" and the Jenkins version. They do not cover any Jenkins
+   content; check a build page and a job's "Configure" page too. Make the window narrow until Jenkins hides its
+   footer: the buttons then form a row at the very end of the page. No permission prompt has appeared.
 3. Press Tab until `Build sound` has focus, then press Enter.
    Expected: the button can be reached with the keyboard, shows a focus outline, and switches to `Build sound: on`
    with a solid green border. In the Network tab a request `build-sound/latest` appears (answered 200 with JSON such
