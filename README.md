@@ -11,7 +11,6 @@ tests; it was checked by hand in Chrome and Safari on a local Jenkins (see "Test
 
 ## Requirements
 
-- Jenkins 2.568.3 or newer (the baseline in `pom.xml`).
 - A single Jenkins controller. Events are kept in the memory of one controller process, so more than one
   controller replica behind a load balancer is not supported.
 - Security enabled, because the plugin only works for logged-in users.
@@ -20,10 +19,7 @@ tests; it was checked by hand in Chrome and Safari on a local Jenkins (see "Test
 
 ## Install
 
-Install it like any other plugin. Until it is released, build it yourself (see "Build and run locally") and
-upload `target/build-sound.hpi` under Manage Jenkins > Plugins > Advanced settings > Deploy Plugin. A plugin built
-on your own machine records your local user name in its version string, which Jenkins shows to administrators, so
-use a local build only on a Jenkins of your own.
+Install "Build Sound" from the plugin manager like any other plugin: Manage Jenkins > Plugins > Available plugins.
 
 Whether a Jenkins restart is needed after installing or removing the plugin has not been checked.
 
@@ -94,7 +90,7 @@ notification when there is more than one event. Only one open tab per browser pl
 ## Tested browsers
 
 The browser side has no automated tests. It was checked by hand with [docs/manual-checklist.md](docs/manual-checklist.md)
-on a local Jenkins 2.568.3, in Chrome 157 and Safari 26 on macOS 26:
+on a local Jenkins, in Chrome 157 and Safari 26 on macOS 26:
 
 - Sound and notifications on the open page, on a hidden tab, and after the tab had been hidden for 10 minutes
   (Chrome only for the 10-minute wait).
@@ -120,7 +116,8 @@ Python standard library. Details and a way to verify them are in [THIRD_PARTY_SO
 ## Build and run locally
 
 You need a JDK (the project is built and tested with Java 21; check the parent POM and Jenkins documentation for
-the supported range) and Maven.
+the supported range) and Maven. A plugin built on your own machine records your local user name in its version
+string, which Jenkins shows to administrators, so use a local build only on a Jenkins of your own.
 
 ```
 mvn verify      # compile, run the tests and the static checks
